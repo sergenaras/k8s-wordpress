@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-pv-claim
+spec:
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 20Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress-deploy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      containers:
+      - name: wordpress
+        image: wordpress:5.6
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: mysql-svc
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: password
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 80
+          name: wordpress-port
+        volumeMounts:
+          - name : wp-pvc-storage
+            mountPath: /var/www/html
+      volumes:
+        - name: wp-pvc-storage
+          persistentVolumeClaim:
+            claimName: wp-pv-claim
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - mysql
+            topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wp-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: wordpress
+  ports:
+  - port: 80
+    targetPort: 80
